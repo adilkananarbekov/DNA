@@ -4,24 +4,64 @@ void main() {
   runApp(MyApp());
 }
 
+double rotationMultiplier = 1.0;
+bool direction = true;
+
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        body: Center(
+          appBar: AppBar(
+            backgroundColor: Colors.orange,
+            title: Text(
+              'DNA model from Adilkan',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            centerTitle: true,
+          ),
+          body: Center(
             child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (int i = 0; i < 15; i++) ...[
-              RotationAnimation(i * 0.15),
-              SizedBox(
-                height: 20,
-              )
-            ]
-          ],
-        )),
-      ),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (int i = 3; i < 23; ++i) ...[
+                  RotationAnimation(i * 0.15),
+                  SizedBox(
+                    height: 15,
+                  )
+                ],
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        rotationMultiplier += 0.1;
+                      },
+                      child: Text('Increase Rotation Multiplier'),
+                    ),
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        rotationMultiplier -= 0.1;
+                      },
+                      child: Text('Decrease Rotation Multiplier'),
+                    ),
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        rotationMultiplier = 0;
+                      },
+                      child: Text('Pause'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          )),
     );
   }
 }
@@ -62,8 +102,9 @@ class _RotationAnimationState extends State<RotationAnimation>
         return Transform(
           alignment: FractionalOffset.center,
           transform: Matrix4.identity()
-            // ..setEntry(3, 2, 0.001) // perspective
-            ..rotateY(_controller.value * 2.0 * 3.14), // Rotate in Y
+            ..setEntry(3, 2, 0.001) // perspective
+            ..rotateY(
+                _controller.value * rotationMultiplier * 3.14), // Rotate in Y
           child: child,
         );
       },
@@ -71,8 +112,8 @@ class _RotationAnimationState extends State<RotationAnimation>
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           Container(
-            width: 20,
-            height: 20,
+            width: 15,
+            height: 15,
             decoration: BoxDecoration(
               color: Colors.red,
               shape: BoxShape.circle,
@@ -80,19 +121,19 @@ class _RotationAnimationState extends State<RotationAnimation>
           ),
           Container(
             width: 185,
-            height: 10,
+            height: 8,
             color: Colors.green,
           ),
           Container(
             width: 185,
-            height: 10,
+            height: 8,
             color: Colors.blue,
           ),
           Container(
-            width: 20,
-            height: 20,
+            width: 15,
+            height: 15,
             decoration: BoxDecoration(
-              color: Colors.blue,
+              color: Colors.red,
               shape: BoxShape.circle,
             ),
           ),
