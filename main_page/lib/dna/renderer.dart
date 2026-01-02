@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:vector_math/vector_math_64.dart' as v;
 import 'model.dart';
@@ -21,74 +20,46 @@ class DNAPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Setup Viewport
     double cx = size.width / 2;
     double cy = size.height / 2;
 
-    // Camera parameters
-    // We orbit around the center (0,0,0)
-    // Actually we will rotate the world and keep camera fixed.
-
-    // Create transformation matrix
-    // 1. Torsional waves + Breathing (modify model positions temporarily for drawing)
-
-    // We need to collect all drawables (lines and circles) and sort them by Z for correct occlusion.
     List<_Drawable> drawables = [];
 
-    // Pre-calculate projection matrix or just manual projection
-    // Manual projection is often easier for simple 3D clouds
+    // Scale factor to convert model units (radius ~6) to screen pixels
+    // Radius 6 * 15 = 90 pixels on screen
+    const double worldScale = 15.0;
 
-    // World Transform
-    v.Matrix4 matrix = v.Matrix4.identity();
-    matrix.translate(0.0, 0.0, -20.0); // Move camera back? Or move object forward.
-    // Let's assume camera is at (0,0,20) looking at (0,0,0).
-    // So we translate world by (0,0,-20) relative to camera.
-    // Or just rotate the points and project: x_proj = x / (z + dist) * scale
+    // FOV acts as the camera distance for perspective division
+    double fov = 600.0;
 
-    double fov = 300.0 * zoom;
-
-    // Apply rotations
+    // Rotation Matrix
     v.Matrix4 rotation = v.Matrix4.rotationX(rotationX) * v.Matrix4.rotationY(rotationY);
 
-    // Process Bonds first (as lines)
+    // Process Bonds
     for (var bond in system.bonds) {
-      v.Vector3 start = _transform(bond.start.position, rotation);
-      v.Vector3 end = _transform(bond.end.position, rotation);
+      v.Vector3 startPos = _applyWave(bond.start.position);
+      v.Vector3 endPos = _applyWave(bond.end.position);
 
-      // Calculate average Z for sorting
-      double z = (start.z + end.z) / 2;
+      v.Vector3 tStart = _transform(startPos, rotation);
+      v.Vector3 tEnd = _transform(endPos, rotation);
 
-      drawables.add(_DrawableLine(start, end, bond.color, bond.thickness, z));
+      // Calculate depth
+      double z = (tStart.z + tEnd.z) / 2;
+
+      // Don't draw if behind "camera plane" (simplification)
+      // Assuming camera is at +z = fov
+
+      drawables.add(_DrawableLine(tStart, tEnd, bond.color, bond.thickness, z, worldScale, zoom));
     }
 
     // Process Particles
     for (var particle in system.particles) {
-      // Apply wave/breathing effect here
-      v.Vector3 pos = particle.position.clone();
-
-      // Torsional wave: twist based on Y height and time
-      double wave = sin(pos.y * 0.5 + time * 2) * 0.5;
-      // Rotation around Y axis for the wave
-      double cosW = cos(wave);
-      double sinW = sin(wave);
-      double nx = pos.x * cosW - pos.z * sinW;
-      double nz = pos.x * sinW + pos.z * cosW;
-      pos.x = nx;
-      pos.z = nz;
-
-      // Breathing: expand/contract radius
-      double breath = 1.0 + 0.1 * sin(time * 1.5 + pos.y * 0.3);
-      pos.x *= breath;
-      pos.z *= breath;
-
+      v.Vector3 pos = _applyWave(particle.position);
       v.Vector3 tPos = _transform(pos, rotation);
-      drawables.add(_DrawableCircle(tPos, particle.color, particle.radius, tPos.z, particle.glowIntensity));
+      drawables.add(_DrawableSphere(tPos, particle.color, particle.radius, tPos.z, particle.glowIntensity, worldScale, zoom));
     }
 
-    // Sort by Z (furthest first, so smallest Z if using OpenGL coords where -Z is forward?
-    // Here we define +Z towards camera for sorting usually, or just Z value.
-    // _transform rotates. Let's assume +Z comes out of screen.
-    // So we paint smallest Z (furthest negative) first.
+    // Sort by Z (furthest first)
     drawables.sort((a, b) => a.z.compareTo(b.z));
 
     // Draw
@@ -97,15 +68,34 @@ class DNAPainter extends CustomPainter {
     }
   }
 
+  v.Vector3 _applyWave(v.Vector3 original) {
+    v.Vector3 pos = original.clone();
+
+    // Torsional wave
+    double wave = sin(pos.y * 0.3 + time * 1.5) * 0.3;
+
+    double cosW = cos(wave);
+    double sinW = sin(wave);
+    double nx = pos.x * cosW - pos.z * sinW;
+    double nz = pos.x * sinW + pos.z * cosW;
+    pos.x = nx;
+    pos.z = nz;
+
+    // Breathing
+    double breath = 1.0 + 0.05 * sin(time * 2.0 + pos.y * 0.2);
+    pos.x *= breath;
+    pos.z *= breath;
+
+    return pos;
+  }
+
   v.Vector3 _transform(v.Vector3 pos, v.Matrix4 rot) {
-    // Apply rotation
-    v.Vector3 rotated = rot.transform3(pos.clone());
-    return rotated;
+    return rot.transform3(pos.clone());
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return true; // Always repaint for animation
+    return true;
   }
 }
 
@@ -120,62 +110,78 @@ class _DrawableLine extends _Drawable {
   v.Vector3 end;
   Color color;
   double thickness;
+  double worldScale;
+  double zoom;
 
-  _DrawableLine(this.start, this.end, this.color, this.thickness, double z) : super(z);
+  _DrawableLine(this.start, this.end, this.color, this.thickness, double z, this.worldScale, this.zoom) : super(z);
 
   @override
   void draw(Canvas canvas, double cx, double cy, double fov) {
-    double scaleStart = fov / (fov - start.z); // Perspective division
-    double scaleEnd = fov / (fov - end.z);
+    // Perspective projection
+    double scaleStart = (fov / (fov - start.z * worldScale)) * zoom;
+    double scaleEnd = (fov / (fov - end.z * worldScale)) * zoom;
 
-    if (scaleStart < 0 || scaleEnd < 0) return; // Behind camera (assuming camera at z=fov effectively)
+    // Simple clipping if behind camera
+    if (scaleStart < 0 || scaleEnd < 0) return;
 
-    Offset p1 = Offset(start.x * scaleStart + cx, start.y * scaleStart + cy);
-    Offset p2 = Offset(end.x * scaleEnd + cx, end.y * scaleEnd + cy);
+    Offset p1 = Offset(start.x * worldScale * scaleStart + cx, start.y * worldScale * scaleStart + cy);
+    Offset p2 = Offset(end.x * worldScale * scaleEnd + cx, end.y * worldScale * scaleEnd + cy);
 
-    // Fade distant lines
-    double opacity = (scaleStart + scaleEnd) / 2;
-    opacity = opacity.clamp(0.1, 1.0);
+    double depthAlpha = ((scaleStart + scaleEnd) / 2).clamp(0.2, 1.0);
 
+    // Using withValues(alpha: ...) to avoid deprecation
     Paint paint = Paint()
-      ..color = color.withOpacity(color.opacity * opacity)
-      ..strokeWidth = thickness * opacity
+      ..color = color.withValues(alpha: (color.a * depthAlpha).clamp(0.0, 1.0))
+      ..strokeWidth = thickness * worldScale * 0.5 * depthAlpha * zoom // Scale line thickness too
       ..strokeCap = StrokeCap.round;
 
     canvas.drawLine(p1, p2, paint);
   }
 }
 
-class _DrawableCircle extends _Drawable {
+class _DrawableSphere extends _Drawable {
   v.Vector3 pos;
   Color color;
   double radius;
   double glow;
+  double worldScale;
+  double zoom;
 
-  _DrawableCircle(this.pos, this.color, this.radius, double z, this.glow) : super(z);
+  _DrawableSphere(this.pos, this.color, this.radius, double z, this.glow, this.worldScale, this.zoom) : super(z);
 
   @override
   void draw(Canvas canvas, double cx, double cy, double fov) {
-    double scale = fov / (fov - pos.z);
+    double scale = (fov / (fov - pos.z * worldScale)) * zoom;
     if (scale < 0) return;
 
-    Offset center = Offset(pos.x * scale + cx, pos.y * scale + cy);
-    double r = radius * scale * 20; // Scale up for visibility
+    Offset center = Offset(pos.x * worldScale * scale + cx, pos.y * worldScale * scale + cy);
 
-    // Alpha based on depth
-    double alpha = scale.clamp(0.0, 1.0);
+    // Visual radius in pixels
+    double r = radius * worldScale * scale;
 
-    // Glow effect
+    if (r < 0.5) return;
+
+    double depthAlpha = scale.clamp(0.0, 1.0);
+
+    // Glow
     if (glow > 0) {
       Paint glowPaint = Paint()
-        ..color = color.withOpacity(0.3 * alpha)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 2);
-      canvas.drawCircle(center, r * 3, glowPaint);
+        ..color = color.withValues(alpha: (0.4 * depthAlpha).clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 1.5);
+      canvas.drawCircle(center, r * 2.5, glowPaint);
     }
 
+    // Sphere Gradient
     Paint paint = Paint()
-      ..color = color.withOpacity(color.opacity * alpha)
-      ..style = PaintingStyle.fill;
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: depthAlpha),
+          color.withValues(alpha: depthAlpha),
+          color.withValues(alpha: (depthAlpha * 0.5).clamp(0.0, 1.0)),
+        ],
+        stops: const [0.0, 0.4, 1.0],
+        focal: const Alignment(-0.3, -0.3),
+      ).createShader(Rect.fromCircle(center: center, radius: r));
 
     canvas.drawCircle(center, r, paint);
   }

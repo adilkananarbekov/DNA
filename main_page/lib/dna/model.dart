@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'package:vector_math/vector_math_64.dart';
+import 'package:vector_math/vector_math_64.dart' hide Colors;
 import 'package:flutter/material.dart';
 
 /// Represents a single particle in the system (atom, ion, etc.)
@@ -37,11 +37,12 @@ class DNASystem {
   List<Particle> particles = [];
   List<Bond> bonds = [];
 
-  // Parameters for the helix
-  static const double risePerBasePair = 0.5; // Vertical distance
-  static const double radius = 3.0; // Helix radius
-  static const int basePairsCount = 40; // Number of base pairs
-  static const double twistsPerBasePair = 0.4; // Rotation per step (radians)
+  // Adjusted Parameters for better visibility
+  static const double risePerBasePair = 0.8;
+  static const double radius = 6.0;
+  static const int basePairsCount = 30;
+  static const double twistsPerBasePair = 0.5; // ~28 degrees
+  static const double majorGrooveOffset = 0.5; // Offset for major/minor groove effect
 
   DNASystem() {
     _generateDNA();
@@ -49,8 +50,18 @@ class DNASystem {
   }
 
   void _generateDNA() {
+    Particle? prevPA;
+    Particle? prevPB;
+
     for (int i = 0; i < basePairsCount; i++) {
       double y = (i - basePairsCount / 2) * risePerBasePair;
+
+      // Introduce groove asymmetry
+      // Standard helix has even spacing, but DNA has major/minor grooves.
+      // We can modulate the angle slightly or just accept B-DNA roughly 10.5 bp/turn.
+      // Let's stick to regular spiral for visual clarity but add a slight offset if needed.
+      // Or just keep it clean. Let's keep the regular twist but maybe adjust the phase.
+
       double angle = i * twistsPerBasePair;
 
       // Backbone positions (Strand A and Strand B)
@@ -61,110 +72,94 @@ class DNASystem {
       );
 
       Vector3 posB = Vector3(
-        radius * cos(angle + pi), // 180 degrees offset
+        radius * cos(angle + pi + majorGrooveOffset), // Offset one strand slightly to create grooves
         y,
-        radius * sin(angle + pi),
+        radius * sin(angle + pi + majorGrooveOffset),
       );
 
-      // Create backbone particles
+      // Create backbone particles (Phosphates) - Large and distinct
       Particle pA = Particle(
         position: posA,
-        color: Colors.blueAccent.withOpacity(0.8),
-        radius: 0.4,
-        glowIntensity: 0.5
+        color: Colors.cyanAccent, // Bright distinct color
+        radius: 0.8,
+        glowIntensity: 0.8
       );
       Particle pB = Particle(
         position: posB,
-        color: Colors.purpleAccent.withOpacity(0.8),
-        radius: 0.4,
-        glowIntensity: 0.5
+        color: Colors.purpleAccent,
+        radius: 0.8,
+        glowIntensity: 0.8
       );
 
       particles.add(pA);
       particles.add(pB);
 
-      // Connect to previous particles to form rails (if not first)
-      if (i > 0) {
-        // We know the previous two particles are at index -2 and -1 relative to current addition
-        // But easier to just store them or access list
-        int lastIndex = particles.length - 1;
-        // pB is at lastIndex, pA is at lastIndex - 1
-        // Previous pB is at lastIndex - 2, Previous pA is at lastIndex - 3
-
+      // Connect to previous backbone particles to form rails
+      if (prevPA != null && prevPB != null) {
         Bond railA = Bond(
-          start: particles[lastIndex - 3],
+          start: prevPA,
           end: pA,
-          color: Colors.blue.withOpacity(0.3),
-          thickness: 2.0
+          color: Colors.cyan.withOpacity(0.5),
+          thickness: 3.0 // Thicker rails
         );
         Bond railB = Bond(
-          start: particles[lastIndex - 2],
+          start: prevPB,
           end: pB,
-          color: Colors.purple.withOpacity(0.3),
-          thickness: 2.0
+          color: Colors.purple.withOpacity(0.5),
+          thickness: 3.0
         );
         bonds.add(railA);
         bonds.add(railB);
       }
 
-      // Base pairs (Steps)
-      // A-T or C-G logic can be randomized.
-      // Let's make the bond split in the middle to allow "breathing" visualization later
-      // Or just a single line for now.
-      // User wants: "Base pairs: solid, denser material with subtle inner glow"
+      prevPA = pA;
+      prevPB = pB;
 
-      // Let's add two inner particles for the bases themselves
-      Vector3 innerA = posA * 0.6 + Vector3(0, y, 0) * 0.4; // Interpolate towards center
-      Vector3 innerB = posB * 0.6 + Vector3(0, y, 0) * 0.4; // logic: posA is (x,y,z), we want (0,y,0) is center.
-      // Actually vector math: lerp(posA, center, t). Center is (0,y,0).
+      // Base pairs (The rungs)
+      // Interpolate positions to creates bases
       Vector3 center = Vector3(0, y, 0);
-      Vector3 basePosA = Vector3.zero()..setFrom(posA)..sub(center)..scale(0.6)..add(center);
-      Vector3 basePosB = Vector3.zero()..setFrom(posB)..sub(center)..scale(0.6)..add(center);
 
-      Color baseColorA = (i % 2 == 0) ? Colors.orange : Colors.green; // Arbitrary A/C
-      Color baseColorB = (i % 2 == 0) ? Colors.yellow : Colors.red;   // Arbitrary T/G
+      // Base A (closer to strand A)
+      Vector3 basePosA = Vector3.zero()..setFrom(posA)..sub(center)..scale(0.7)..add(center);
+      // Base B (closer to strand B)
+      Vector3 basePosB = Vector3.zero()..setFrom(posB)..sub(center)..scale(0.7)..add(center);
 
-      Particle baseAtomA = Particle(position: basePosA, color: baseColorA, radius: 0.6);
-      Particle baseAtomB = Particle(position: basePosB, color: baseColorB, radius: 0.6);
+      // Distinct colors for bases
+      Color colorA = (i % 4 == 0) ? Colors.redAccent : (i % 4 == 1) ? Colors.blueAccent : (i % 4 == 2) ? Colors.greenAccent : Colors.orangeAccent;
+      Color colorB = (i % 4 == 0) ? Colors.blueAccent : (i % 4 == 1) ? Colors.redAccent : (i % 4 == 2) ? Colors.orangeAccent : Colors.greenAccent;
+
+      Particle baseAtomA = Particle(position: basePosA, color: colorA, radius: 0.5);
+      Particle baseAtomB = Particle(position: basePosB, color: colorB, radius: 0.5);
 
       particles.add(baseAtomA);
       particles.add(baseAtomB);
 
-      // Connect backbone to base
-      bonds.add(Bond(start: pA, end: baseAtomA, color: Colors.grey.withOpacity(0.5), thickness: 1.0));
-      bonds.add(Bond(start: pB, end: baseAtomB, color: Colors.grey.withOpacity(0.5), thickness: 1.0));
+      // Bond Backbone to Base
+      bonds.add(Bond(start: pA, end: baseAtomA, color: Colors.grey.withOpacity(0.3), thickness: 1.5));
+      bonds.add(Bond(start: pB, end: baseAtomB, color: Colors.grey.withOpacity(0.3), thickness: 1.5));
 
-      // Hydrogen bond (middle)
+      // Hydrogen Bond (Base to Base)
       bonds.add(Bond(
         start: baseAtomA,
         end: baseAtomB,
-        color: Colors.white.withOpacity(0.2),
-        thickness: 0.5
+        color: Colors.white.withOpacity(0.6),
+        thickness: 2.0 // Distinct rung
       ));
     }
   }
 
   void _addFloatingParticles() {
     Random rng = Random();
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 30; i++) {
       particles.add(Particle(
         position: Vector3(
-          (rng.nextDouble() - 0.5) * 15,
-          (rng.nextDouble() - 0.5) * 20,
-          (rng.nextDouble() - 0.5) * 15,
+          (rng.nextDouble() - 0.5) * 30,
+          (rng.nextDouble() - 0.5) * 40,
+          (rng.nextDouble() - 0.5) * 30,
         ),
-        color: Colors.white.withOpacity(0.3),
-        radius: rng.nextDouble() * 0.3 + 0.1,
+        color: Colors.white.withOpacity(0.1),
+        radius: rng.nextDouble() * 0.4 + 0.1,
       ));
     }
-  }
-
-  // Update logic for animation
-  void update(double time) {
-    // Here we can apply "breathing" or wave effects without permanently destroying the base structure.
-    // However, since we stored mutable Vector3s, we need to be careful.
-    // Best practice: Store initial positions and apply offsets every frame.
-    // For simplicity in this iteration, we will just apply rotation in the renderer,
-    // but for "non-uniform motion" we might want to offset positions here.
   }
 }

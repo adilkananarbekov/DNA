@@ -8,9 +8,9 @@ void main() {
     expect(system.bonds.isNotEmpty, true);
 
     // Check if we have roughly expected number of particles
-    // 40 base pairs * (2 backbone + 2 base) = 160 particles
-    // + 50 floating
-    expect(system.particles.length, greaterThan(150));
+    // 30 base pairs * 4 particles (2 backbone, 2 base) = 120
+    // + 30 floating = 150
+    expect(system.particles.length, greaterThanOrEqualTo(150));
   });
 
   test('Particle position integrity', () {
