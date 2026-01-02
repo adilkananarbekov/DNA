@@ -1,0 +1,16 @@
+GitHub Pages Deployment Guide (local)
+
+Automatic deploy (recommended)
+1) Push your main branch to GitHub.
+2) In the repo, go to Settings -> Pages.
+3) Source: "Deploy from a branch", Branch: "gh-pages", Folder: "/ (root)".
+4) The workflow ".github/workflows/deploy-web.yml" will build and publish.
+5) Your site URL will be: https://<user>.github.io/<repo>/
+
+Manual deploy (PowerShell)
+1) .\scripts\predeploy.ps1 -BaseHref "/<repo>/"
+2) .\scripts\deploy.ps1 -BaseHref "/<repo>/"
+
+Notes
+- For a user site repo named "<user>.github.io", use base href "/" instead of "/<repo>/".
+- If you rename the repo, re-run deploy so the base href matches the new name.
