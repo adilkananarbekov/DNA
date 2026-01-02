@@ -1,150 +1,132 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'dna/model.dart';
+import 'dna/renderer.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const DNAApp());
 }
 
-double rotationMultiplier = 1.0;
-bool direction = true;
+class DNAApp extends StatelessWidget {
+  const DNAApp({super.key});
 
-class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      home: Scaffold(
-          appBar: AppBar(
-            backgroundColor: Colors.orange,
-            title: Text(
-              'DNA model from Adilkan',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            centerTitle: true,
-          ),
-          body: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (int i = 3; i < 23; ++i) ...[
-                  RotationAnimation(i * 0.15),
-                  SizedBox(
-                    height: 15,
-                  )
-                ],
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ElevatedButton(
-                      onPressed: () {
-                        rotationMultiplier += 0.1;
-                      },
-                      child: Text('Increase Rotation Multiplier'),
-                    ),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () {
-                        rotationMultiplier -= 0.1;
-                      },
-                      child: Text('Decrease Rotation Multiplier'),
-                    ),
-                    SizedBox(width: 10),
-                    ElevatedButton(
-                      onPressed: () {
-                        rotationMultiplier = 0;
-                      },
-                      child: Text('Pause'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          )),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: Colors.black,
+      ),
+      home: const DNAScene(),
     );
   }
 }
 
-class RotationAnimation extends StatefulWidget {
-  final double delay;
-
-  RotationAnimation(this.delay);
+class DNAScene extends StatefulWidget {
+  const DNAScene({super.key});
 
   @override
-  _RotationAnimationState createState() => _RotationAnimationState();
+  State<DNAScene> createState() => _DNASceneState();
 }
 
-class _RotationAnimationState extends State<RotationAnimation>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+class _DNASceneState extends State<DNAScene> with SingleTickerProviderStateMixin {
+  late Ticker _ticker;
+  late DNASystem _dnaSystem;
+
+  double _time = 0.0;
+  double _rotationY = 0.0;
+  double _rotationX = 0.0;
+  double _zoom = 1.0;
+
+  // Interaction
+  Offset? _lastPan;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
+    _dnaSystem = DNASystem();
 
-    Future.delayed(Duration(milliseconds: (widget.delay * 1000).round()), () {
-      if (mounted) {
-        _controller.repeat();
-      }
+    _ticker = createTicker((elapsed) {
+      setState(() {
+        _time = elapsed.inMilliseconds / 1000.0;
+        // Auto-rotate slowly if not interacting?
+        // User said: "does NOT spin uniformly", "Torsional waves"
+        // The rotation is handled in renderer via _time for waves.
+        // But we can add a slow global rotation too.
+        _rotationY += 0.005;
+      });
     });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (BuildContext context, Widget? child) {
-        return Transform(
-          alignment: FractionalOffset.center,
-          transform: Matrix4.identity()
-            ..setEntry(3, 2, 0.001) // perspective
-            ..rotateY(
-                _controller.value * rotationMultiplier * 3.14), // Rotate in Y
-          child: child,
-        );
-      },
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          Container(
-            width: 15,
-            height: 15,
-            decoration: BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-          ),
-          Container(
-            width: 185,
-            height: 8,
-            color: Colors.green,
-          ),
-          Container(
-            width: 185,
-            height: 8,
-            color: Colors.blue,
-          ),
-          Container(
-            width: 15,
-            height: 15,
-            decoration: BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ),
-    );
+    _ticker.start();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ticker.dispose();
     super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: GestureDetector(
+        onPanStart: (details) {
+          _lastPan = details.localPosition;
+        },
+        onPanUpdate: (details) {
+          if (_lastPan != null) {
+            final dx = details.localPosition.dx - _lastPan!.dx;
+            final dy = details.localPosition.dy - _lastPan!.dy;
+            setState(() {
+              _rotationY += dx * 0.01;
+              _rotationX -= dy * 0.01;
+            });
+            _lastPan = details.localPosition;
+          }
+        },
+        onPanEnd: (_) {
+          _lastPan = null;
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            _zoom = (_zoom * details.scale).clamp(0.5, 3.0);
+          });
+        },
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.center,
+              radius: 1.5,
+              colors: [
+                Color(0xFF1a1a2e),
+                Color(0xFF000000),
+              ],
+            ),
+          ),
+          child: CustomPaint(
+            painter: DNAPainter(
+              system: _dnaSystem,
+              time: _time,
+              rotationY: _rotationY,
+              rotationX: _rotationX,
+              zoom: _zoom,
+            ),
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            // Reset view
+            _rotationY = 0;
+            _rotationX = 0;
+            _zoom = 1.0;
+          });
+        },
+        child: const Icon(Icons.refresh),
+        backgroundColor: Colors.blueAccent.withOpacity(0.5),
+      ),
+    );
   }
 }
